@@ -1,0 +1,73 @@
+# Arquivos de backup do Visual Studio
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Diretórios de build
+bin/
+obj/
+out/
+Debug/
+Release/
+
+# Arquivos de lock
+project.lock.json
+project.fragment.lock.json
+
+# Diretórios de publicação
+.publish/
+
+# Arquivos temporários do Visual Studio
+*.rsuser
+*.opendb
+*.VC.db
+.vscode/
+
+# Configurações locais do Visual Studio Code
+.vscode/
+
+# Arquivos de log e temporários
+*.log
+*.tlog
+*.cache
+*.ide.*
+*.pidb
+*.pdb
+*.tmp
+*.tmp/
+*.temp
+*.temp/
+
+# Configurações do sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de pacote NuGet
+*.nupkg
+*.snupkg
+*.nuspec
+
+# Diretórios do NuGet
+packages/
+.nuget/
+
+# Configurações do Rider (JetBrains)
+.idea/
+*.sln.iml
+
+# Configurações do sistema operacional
+*.DS_Store
+*.directory
+*.directory/
+
+# Arquivos de lock e pacotes
+project.lock.json
+project.fragment.lock.json
+
+# Arquivos de cache e temporários do MSBuild
+*.cache/
+*.tlog
+
+# Logs do programa local
+log.log
