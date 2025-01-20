@@ -1,0 +1,70 @@
+# Ignore arquivos de sistema operacionais
+.DS_Store
+Thumbs.db
+
+# Diretórios de build e publicação
+bin/
+obj/
+out/
+
+# Configurações de usuários do Visual Studio/JetBrains/Rider
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Arquivos temporários do sistema operacional
+*.swp
+*.lock
+*.log
+*.tmp
+*.bak
+*.old
+*.patch
+*.orig
+
+# Diretórios e arquivos gerados por pacotes NuGet
+*.nupkg
+packages/
+*.snupkg
+
+# Diretórios e arquivos gerados pelo DotNet CLI
+**/project.lock.json
+**/project.fragment.lock.json
+artifacts/
+
+# Arquivos de dependências locais
+*.deps.json
+
+# Arquivos de depuração
+*.pdb
+
+# Arquivos de cache do Rider/Resharper
+.ReSharper/
+*.DotSettings.user
+
+# Arquivos de cache do Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Arquivos e diretórios do sistema Git
+!.gitignore
+
+# Logs e arquivos temporários do Docker
+*.pid
+docker-compose.override.yml
+.env
+
+# Ignorar logs de teste
+TestResults/
+*.trx
+*.coverage
+coverage/
+
+# Exclusão de cache de EF Core
+*.db
+*.sqlite
