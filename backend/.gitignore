@@ -10,6 +10,7 @@ out/
 # Configurações de usuários do Visual Studio/JetBrains/Rider
 .vscode/
 .idea/
+.vs/
 *.suo
 *.user
 *.userosscache
