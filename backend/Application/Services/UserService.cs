@@ -1,76 +1,179 @@
-using System.Security.Claims;
 using Backend.Application.DTOs;
 using Backend.Application.Interfaces;
 using Backend.Domain.Entities;
+using Backend.Domain.Exceptions;
 using Backend.Domain.Interfaces;
-using BCrypt.Net;
 using Microsoft.IdentityModel.Tokens;
+using SendGrid;
+using SendGrid.Helpers.Mail;
+using System.Security.Claims;
 using System.Text;
 
-namespace Backend.Application.Services
+namespace Backend.Application.Services;
+
+public class UserService : IUserService
 {
-    // Custom exceptions
-    public class UserAlreadyExistsException : Exception
+    private readonly IUserRepository _userRepository;
+    private readonly IConfiguration _configuration;
+    private readonly string _jwtSecretKey;
+
+    public UserService(IUserRepository userRepository, IConfiguration configuration)
     {
-        public UserAlreadyExistsException(string message) : base(message) { }
+        _userRepository = userRepository;
+        _configuration = configuration;
+        _jwtSecretKey = configuration["JwtSettings:SecretKey"] 
+            ?? throw new ArgumentNullException(nameof(configuration), "JWT Secret Key is not configured.");
     }
 
-    public class InvalidCredentialsException : Exception
+    public async Task<string> Login(UserLoginDto userLoginDto)
     {
-        public InvalidCredentialsException(string message) : base(message) { }
+        var user = await _userRepository.GetByEmail(userLoginDto.Email);
+        if (user == null || !BCrypt.Net.BCrypt.Verify(userLoginDto.Password, user.PasswordHash))
+        {
+            throw new ValidationException("Invalid email or password");
+        }
+
+        return GenerateJwtToken(user);
     }
 
-    public class UserService : IUserService
+    private string GenerateJwtToken(User user)
     {
-        private readonly IUserRepository _userRepository;
-
-        public UserService(IUserRepository userRepository)
+        var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+        var key = Encoding.ASCII.GetBytes(_jwtSecretKey);
+        var tokenDescriptor = new SecurityTokenDescriptor
         {
-            _userRepository = userRepository;
-        }
-
-        public async Task Register(UserRegisterDto userRegisterDTO)
-        {
-            var existingUser = await _userRepository.GetByEmail(userRegisterDTO.Email);
-            if (existingUser != null)
-                throw new UserAlreadyExistsException("User already exists with this email");
-
-            var user = new User
+            Subject = new ClaimsIdentity(new[]
             {
-                Name = userRegisterDTO.Name,
-                Email = userRegisterDTO.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(userRegisterDTO.Password)
-            };
+                new Claim(ClaimTypes.Name, user.Id.ToString())
+            }),
+            Expires = DateTime.UtcNow.AddHours(24),
+            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+        };
 
-            await _userRepository.Add(user);
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return tokenHandler.WriteToken(token);
+    }
+
+    public async Task Register(UserRegisterDto userRegisterDto)
+    {
+        var existingUser = await _userRepository.GetByEmail(userRegisterDto.Email);
+        if (existingUser != null)
+        {
+            throw new ValidationException("User already exists with this email");
         }
 
-        public async Task<string> Login(UserLoginDto userLoginDTO)
+        var user = new User
         {
-            var user = await _userRepository.GetByEmail(userLoginDTO.Email);
-            if (user == null || !BCrypt.Net.BCrypt.Verify(userLoginDTO.Password, user.PasswordHash))
-                throw new InvalidCredentialsException("Invalid email or password");
+            Name = userRegisterDto.Name,
+            Email = userRegisterDto.Email,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(userRegisterDto.Password)
+        };
 
-            // Generate JWT Token
-            return GenerateJwtToken(user);
+        await _userRepository.Add(user);
+    }
+
+    public async Task UpdateUser(Guid userId, UpdateUserDto updateUserDto)
+    {
+        var user = await _userRepository.GetById(userId);
+        if (user == null)
+        {
+            throw new NotFoundException("User not found");
         }
 
-        private string GenerateJwtToken(User user)
+        if (!string.IsNullOrWhiteSpace(updateUserDto.Name))
         {
-            var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("yA1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6="); // Chave segura com pelo menos 32 caracteres
-            var tokenDescriptor = new SecurityTokenDescriptor
+            user.Name = updateUserDto.Name;
+        }
+
+        if (!string.IsNullOrWhiteSpace(updateUserDto.Email))
+        {
+            var existingUser = await _userRepository.GetByEmail(updateUserDto.Email);
+            if (existingUser != null && existingUser.Id != userId)
             {
-                Subject = new ClaimsIdentity(new Claim[]
-                {
-                    new Claim(ClaimTypes.Name, user.Id.ToString())
-                }),
-                Expires = DateTime.UtcNow.AddDays(7),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
+                throw new ValidationException("Email is already in use by another user");
+            }
+            user.Email = updateUserDto.Email;
         }
+
+        await _userRepository.Update(user);
+    }
+
+    public async Task<UserInfoDto> GetUserInfo(Guid userId)
+    {
+        var user = await _userRepository.GetById(userId);
+        if (user == null)
+        {
+            throw new NotFoundException("User not found");
+        }
+
+        return new UserInfoDto
+        {
+            Name = user.Name,
+            Email = user.Email
+        };
+    }
+
+    public async Task SendPasswordResetCode(string email)
+    {
+        var user = await _userRepository.GetByEmail(email);
+        if (user == null)
+        {
+            throw new ValidationException("User with this email does not exist");
+        }
+
+        var resetCode = Guid.NewGuid().ToString().Substring(0, 6);
+        user.PasswordResetCode = resetCode;
+        user.PasswordResetCodeExpiresAt = DateTime.UtcNow.AddMinutes(15);
+
+        await _userRepository.Update(user);
+
+        var client = new SendGridClient(_configuration["SendGrid:ApiKey"]);
+        var from = new EmailAddress(_configuration["SendGrid:SenderEmail"], _configuration["SendGrid:SenderName"]);
+        var to = new EmailAddress(user.Email, user.Name);
+        var replyTo = new EmailAddress(_configuration["SendGrid:ReplyToEmail"]);
+        var subject = "Redefinição de Senha - Sistema de Teste";
+        var plainTextContent = $"Seu código de redefinição de senha é: {resetCode}";
+        var htmlContent = $"<strong>Seu código de redefinição de senha é: {resetCode}</strong>";
+
+        var msg = MailHelper.CreateSingleEmail(from, to, subject, plainTextContent, htmlContent);
+        msg.ReplyTo = replyTo;
+
+        var response = await client.SendEmailAsync(msg);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new EmailSendingFailedException("Failed to send password reset email");
+        }
+    }
+
+    public async Task ResetPassword(string email, string resetCode, string newPassword)
+    {
+        var user = await _userRepository.GetByEmail(email);
+        if (user == null || user.PasswordResetCode != resetCode || user.PasswordResetCodeExpiresAt < DateTime.UtcNow)
+        {
+            throw new ValidationException("Invalid or expired reset code");
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        user.PasswordResetCode = null;
+        user.PasswordResetCodeExpiresAt = null;
+
+        await _userRepository.Update(user);
+    }
+
+    public async Task DeleteAccount(Guid userId, string password)
+    {
+        var user = await _userRepository.GetById(userId);
+        if (user == null)
+        {
+            throw new NotFoundException("User not found");
+        }
+
+        if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        {
+            throw new ValidationException("Invalid password");
+        }
+
+        await _userRepository.Delete(user);
     }
 }

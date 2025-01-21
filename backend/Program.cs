@@ -24,6 +24,10 @@ builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
 builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 
+builder.Services.AddMemoryCache();
+
+builder.Services.AddSingleton<LoginAttemptService>();
+
 var jwtSecretKey = builder.Configuration["JwtSettings:SecretKey"];
 if (string.IsNullOrEmpty(jwtSecretKey) || jwtSecretKey.Length < 32)
 {
